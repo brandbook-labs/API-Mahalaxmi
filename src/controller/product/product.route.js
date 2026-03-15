@@ -25,7 +25,7 @@ router.post(
 );
 
 router.put(
-    "/",
+    "/:id",
     verifyToken,
     upload.array("productImages", 5),
     UpdateProductByAdmin
