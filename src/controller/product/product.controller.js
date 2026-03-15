@@ -50,34 +50,32 @@ const AddProductByAdmin = asyncHandler(async (req, res) => {
         productDetails: safeParse(req.body.productDetails, {}),
     };
 
-    // ଇମେଜ୍ ଅପଲୋଡ୍ (Multiple Images)
-    // if (req.files && req.files.length > 0) {
-    //     try {
-    //         // Promise.all() ବ୍ୟବହାର କରି ସବୁ ଇମେଜ୍ କୁ ଏକାସାଙ୍ଗରେ (parallel) ପ୍ରୋସେସ୍ କରିବା
-    //         const uploadPromises = req.files.map(async (file) => {
-    //             // ପ୍ରଡକ୍ଟ ଇମେଜ୍ ଟିକେ କ୍ଲିୟର୍ ଦରକାର, ତେଣୁ 20KB ବଦଳରେ 50KB-100KB ଭିତରେ ରଖିବା ଭଲ
-    //             const optimizedBuffer = await sharpCompressToSize(file.buffer, 50 * 1024); 
+    // Handle images
+    if (req.files && req.files.length > 0) {
+        try {
+            // Promise.all() ବ୍ୟବହାର କରି ସବୁ ଇମେଜ୍ କୁ ଏକାସାଙ୍ଗରେ (parallel) ପ୍ରୋସେସ୍ କରିବା
+            const uploadPromises = req.files.map(async (file) => {
+                // ପ୍ରଡକ୍ଟ ଇମେଜ୍ ଟିକେ କ୍ଲିୟର୍ ଦରକାର, ତେଣୁ 20KB ବଦଳରେ 50KB-100KB ଭିତରେ ରଖିବା ଭଲ
+                const optimizedBuffer = await sharpCompressToSize(file.buffer, 50 * 1024); 
 
-    //             const compressedFile = {
-    //                 ...file,
-    //                 buffer: optimizedBuffer,
-    //                 mimetype: 'image/webp',
-    //                 originalname: file.originalname.replace(/\.[^/.]+$/, "") + `_${Date.now()}.webp` 
-    //             };
+                const compressedFile = {
+                    ...file,
+                    buffer: optimizedBuffer,
+                    mimetype: 'image/webp',
+                    originalname: file.originalname.replace(/\.[^/.]+$/, "") + `_${Date.now()}.webp` 
+                };
 
-    //             return await handleImageUpload(compressedFile);
-    //         });
+                return await handleImageUpload(compressedFile);
+            });
 
-    //         // ସବୁ ଇମେଜ୍ ଅପଲୋଡ୍ ହେବା ପରେ URL ଗୁଡିକୁ ଆଣିବା
-    //         payload.productImages = await Promise.all(uploadPromises);
+            // ସବୁ ଇମେଜ୍ ଅପଲୋଡ୍ ହେବା ପରେ URL ଗୁଡିକୁ ଆଣିବା
+            payload.productImages = await Promise.all(uploadPromises);
 
-    //     } catch (error) {
-    //         console.error("Multiple Image optimization or upload failed:", error);
-    //         return sendApiResponse(res, statusCodes.INTERNAL_SERVER_ERROR, "Image optimization or upload failed");
-    //     }
-    // } else {
-    //     return sendApiResponse(res, statusCodes.BAD_REQUEST, "At least one product image is required.");
-    // }
+        } catch (error) {
+            console.error("Multiple Image optimization or upload failed:", error);
+            return sendApiResponse(res, statusCodes.INTERNAL_SERVER_ERROR, "Image optimization or upload failed");
+        }
+    }
 
     // ଡାଟାବେସ୍ ରେ ସେଭ୍ କରିବା
     const product = await Product.create(payload);
@@ -165,7 +163,112 @@ const GetProductById = asyncHandler(async (req, res) => {
     return sendApiResponse(res, statusCodes.OK, "Product details fetched!", product);
 });
 
-// ───────────── 4. DELETE PRODUCT (Admin Only) ─────────────
+// ───────────── 4. UPDATE PRODUCT (Admin Only) ─────────────
+const UpdateProductByAdmin = asyncHandler(async (req, res) => {
+    // const { role } = req.user;  
+    // if (!["super_admin", "admin", "owner"].includes(role)) {
+    //     return sendApiResponse(res, statusCodes.FORBIDDEN, "You are not authorized to update this product.");
+    // }
+
+    const { id } = req.params; // URL ରୁ Product ID ଆଣିବା
+
+    // ୧. ପ୍ରଥମେ ଚେକ୍ କରନ୍ତୁ ପ୍ରଡକ୍ଟ ଡାଟାବେସ୍ ରେ ଅଛି କି ନାହିଁ
+    const existingProduct = await Product.findById(id);
+    if (!existingProduct) {
+        return sendApiResponse(res, statusCodes.NOT_FOUND, "Product not found.");
+    }
+
+    const { name, mrp, originalPrice, description, department, collectionType, curatedCollection, productType, slug: customSlug } = req.body;
+
+    // ଏକ ଖାଲି ଅବଜେକ୍ଟ୍ ତିଆରି କରନ୍ତୁ ଯେଉଁଥିରେ କେବଳ ବଦଳିଥିବା ଡାଟା ରହିବ (Dynamic Update Payload)
+    const updatePayload = {};
+
+    // ୨. Slug ଏବଂ Name ପରିଚାଳନା 
+    if (name) {
+        updatePayload.name = name;
+        // ଯଦି ନାମ ବଦଳିଛି କିମ୍ବା ନୂଆ slug ପଠାଯାଇଛି, ତେବେ ନୂଆ slug ଜେନେରେଟ୍ କରନ୍ତୁ
+        const slugSource = customSlug || name;
+        if (slugSource !== existingProduct.name && slugSource !== existingProduct.slug) {
+            // ବିଦ୍ର: generateUniqueSlug ରେ id ପଠାଇବା ଭଲ, ଯାହାଦ୍ୱାରା ନିଜର ପୁରୁଣା slug ସହ କନଫ୍ଲିକ୍ଟ (conflict) ହେବ ନାହିଁ
+            updatePayload.slug = await generateUniqueSlug(Product, slugSource, id); 
+        }
+    } else if (customSlug) {
+        updatePayload.slug = await generateUniqueSlug(Product, customSlug, id);
+    }
+
+    // ୩. ସାଧାରଣ ଫିଲ୍ଡ ଗୁଡିକର ଅପଡେଟ୍ (ଯଦି ପଠାଯାଇଛି ତେବେ ହିଁ ଅପଡେଟ୍ ହେବ)
+    if (originalPrice !== undefined) updatePayload.originalPrice = Number(originalPrice);
+    if (mrp !== undefined) {
+        updatePayload.mrp = Number(mrp);
+    } else if (originalPrice !== undefined && !existingProduct.mrp) {
+        updatePayload.mrp = Number(originalPrice);
+    }
+
+    if (description !== undefined) updatePayload.description = description;
+    if (department !== undefined) updatePayload.department = department;
+    if (productType !== undefined) updatePayload.productType = productType;
+
+    // JSON String ଗୁଡିକୁ Object/Array ରେ ପରିଣତ କରିବା
+    if (req.body.collectionType !== undefined) updatePayload.collectionType = safeParse(req.body.collectionType, []);
+    if (req.body.curatedCollection !== undefined) updatePayload.curatedCollection = safeParse(req.body.curatedCollection, []);
+    if (req.body.sizes !== undefined) updatePayload.sizes = safeParse(req.body.sizes, []);
+    if (req.body.productDetails !== undefined) updatePayload.productDetails = safeParse(req.body.productDetails, {});
+
+    // ୪. ଇମେଜ୍ ଅପଡେଟ୍ ଲଜିକ୍ (Hybrid Image Merging)
+    let finalImages = [];
+
+    // Case A: ଫ୍ରଣ୍ଟଏଣ୍ଡ୍ ରୁ ଆସିଥିବା ପୁରୁଣା ଇମେଜ୍ ଲିଙ୍କ୍ କୁ ରଖିବା
+    if (req.body.productImages !== undefined) {
+        let parsedImages = safeParse(req.body.productImages, []);
+        if (!Array.isArray(parsedImages) && typeof req.body.productImages === 'string') {
+            parsedImages = [req.body.productImages];
+        }
+        finalImages = [...parsedImages]; // ପୁରୁଣା ଲିଙ୍କ୍ ଗୁଡିକୁ ଆରେ (Array) ରେ ରଖିଲୁ
+    } else {
+        // ଯଦି ଫ୍ରଣ୍ଟଏଣ୍ଡ୍ productImages ଫିଲ୍ଡ ଆଦୌ ପଠାଇନାହିଁ, ତେବେ ଡାଟାବେସ୍ ର ପୁରୁଣା ଇମେଜ୍ କୁ ଡିଫଲ୍ଟ ଭାବେ ରଖିବା
+        finalImages = [...existingProduct.productImages];
+    }
+
+    // Case B: ନୂଆ ଫଟୋ (Files) ଆସିଥିଲେ ତାକୁ ଅପଲୋଡ୍ କରି ପୁରୁଣା ସହିତ ମିଶାଇବା
+    if (req.files && req.files.length > 0) {
+        try {
+            const uploadPromises = req.files.map(async (file) => {
+                const optimizedBuffer = await sharpCompressToSize(file.buffer, 50 * 1024); 
+
+                const compressedFile = {
+                    ...file,
+                    buffer: optimizedBuffer,
+                    mimetype: 'image/webp',
+                    originalname: file.originalname.replace(/\.[^/.]+$/, "") + `_${Date.now()}.webp` 
+                };
+
+                return await handleImageUpload(compressedFile);
+            });
+
+            const newUploadedImages = await Promise.all(uploadPromises);
+            // ନୂଆ ଏବଂ ପୁରୁଣା ଇମେଜ୍ କୁ ଏକାସାଙ୍ଗରେ ମିଶାଇବା (Merge)
+            finalImages = [...finalImages, ...newUploadedImages];
+
+        } catch (error) {
+            console.error("Multiple Image optimization or upload failed during update:", error);
+            return sendApiResponse(res, statusCodes.INTERNAL_SERVER_ERROR, "Image optimization or upload failed");
+        }
+    }
+
+    // ଅପଡେଟ୍ ପେଲୋଡ୍ ରେ ଫାଇନାଲ୍ ଇମେଜ୍ ଆରେ (Array) କୁ ଯୋଡିବା
+    updatePayload.productImages = finalImages;
+
+    // ୫. ଫାଇନାଲ୍ ଡାଟାବେସ୍ ଅପଡେଟ୍ (findByIdAndUpdate)
+    // { new: true } ର ଅର୍ଥ ହେଉଛି ଅପଡେଟ୍ ହେବା ପରେ ନୂଆ ଡାଟା ରିଟର୍ଣ୍ଣ କରିବ
+    const updatedProduct = await Product.findByIdAndUpdate(id, updatePayload, { 
+        new: true, 
+        runValidators: true 
+    });
+
+    return sendApiResponse(res, statusCodes.OK, "Product updated successfully!", updatedProduct);
+});
+
+// ───────────── 5. DELETE PRODUCT (Admin Only) ─────────────
 const DeleteProduct = asyncHandler(async (req, res) => {
     // const { role } = req.user;
 
@@ -196,5 +299,6 @@ module.exports = {
     AddProductByAdmin,
     GetAllProducts,
     GetProductById,
-    DeleteProduct
+    DeleteProduct,
+    UpdateProductByAdmin
 };

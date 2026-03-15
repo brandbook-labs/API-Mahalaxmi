@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 // ସମସ୍ତ ବିଭାଗର ରାଉଟ୍ ଗୁଡିକୁ ଇମ୍ପୋର୍ଟ କରନ୍ତୁ
-// const adminRoutes = require("./admin.routes");
+const adminRoutes = require("../controller/admin/admin.routes");
 const productRoutes = require("../controller/product/product.route");
 const orderRoutes = require("../controller/order/order.routes");
 
@@ -10,7 +10,7 @@ const orderRoutes = require("../controller/order/order.routes");
 const API_VERSION = "/api/v1";
 
 // ରାଉଟ୍ ଗୁଡିକୁ ନିଜ ନିଜ ପାଥ୍ (path) ସହିତ କନେକ୍ଟ କରନ୍ତୁ
-// router.use(`${API_VERSION}/admin`, adminRoutes);
+router.use(`${API_VERSION}/admin`, adminRoutes);
 router.use(`${API_VERSION}/products`, productRoutes);
 router.use(`${API_VERSION}/order`, orderRoutes);
 

@@ -88,6 +88,10 @@ const placeOrder = asyncHandler(async (req, res) => {
 const getAllOrders = asyncHandler(async (req, res) => {
     const orders = await Order.find()
         // .populate("user", "name email") 
+        .populate({
+            path: "products.product",
+            select: "name" // କେବଳ ନାମ ଦରକାର
+        })
         .sort({ createdAt: -1 })
         .lean()
         .exec();
