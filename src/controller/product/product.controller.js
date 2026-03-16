@@ -9,13 +9,7 @@ const { generateUniqueSlug } = require("../../utils/slug-helper");
 
 // ───────────── 1. ADD PRODUCT (Admin Only) ─────────────
 const AddProductByAdmin = asyncHandler(async (req, res) => {
-    // const { role } = req.user;  
-
-    // if (!["super_admin", "admin", "owner"].includes(role)) {
-    //     return sendApiResponse(res, statusCodes.FORBIDDEN, "You are not authorized to add a product.");
-    // }
-
-    const { name, mrp, originalPrice, description, department, collectionType, curatedCollection, productType } = req.body;
+    const { name, mrp, originalPrice, description, department, collectionType, curatedCollection, productType, sizeType } = req.body;
 
     if (!name || !mrp || !originalPrice) {
         return sendApiResponse(res, statusCodes.BAD_REQUEST, "Name, MRP, and Original Price are required.");
@@ -28,14 +22,13 @@ const AddProductByAdmin = asyncHandler(async (req, res) => {
         return sendApiResponse(
             res,
             statusCodes.BAD_REQUEST,
-            "Clinic name or slug is required"
+            "Product name or slug is required" // [FIXED] Clinic ବଦଳରେ Product ଲେଖାଗଲା
         );
     }
 
     const slug = await generateUniqueSlug(Product, slugSource);
 
     // JSON String କୁ Object ରେ ପରିଣତ କରିବା ପାଇଁ safeParse ର ବ୍ୟବହାର 
-    // (କାରଣ FormData ରେ array/object string ହୋଇ ଆସେ)
     const payload = {
         name,
         slug,
@@ -44,6 +37,7 @@ const AddProductByAdmin = asyncHandler(async (req, res) => {
         description,
         department,
         productType,
+        sizeType: sizeType || "clothing", // [NEW] ଡାଟାବେସ୍ ରେ sizeType ସେଭ୍ କରିବା ପାଇଁ
         collectionType: safeParse(req.body.collectionType, []),
         curatedCollection: safeParse(req.body.curatedCollection, []),
         sizes: safeParse(req.body.sizes, []), 
@@ -53,9 +47,7 @@ const AddProductByAdmin = asyncHandler(async (req, res) => {
     // Handle images
     if (req.files && req.files.length > 0) {
         try {
-            // Promise.all() ବ୍ୟବହାର କରି ସବୁ ଇମେଜ୍ କୁ ଏକାସାଙ୍ଗରେ (parallel) ପ୍ରୋସେସ୍ କରିବା
             const uploadPromises = req.files.map(async (file) => {
-                // ପ୍ରଡକ୍ଟ ଇମେଜ୍ ଟିକେ କ୍ଲିୟର୍ ଦରକାର, ତେଣୁ 20KB ବଦଳରେ 50KB-100KB ଭିତରେ ରଖିବା ଭଲ
                 const optimizedBuffer = await sharpCompressToSize(file.buffer, 50 * 1024); 
 
                 const compressedFile = {
@@ -68,7 +60,6 @@ const AddProductByAdmin = asyncHandler(async (req, res) => {
                 return await handleImageUpload(compressedFile);
             });
 
-            // ସବୁ ଇମେଜ୍ ଅପଲୋଡ୍ ହେବା ପରେ URL ଗୁଡିକୁ ଆଣିବା
             payload.productImages = await Promise.all(uploadPromises);
 
         } catch (error) {
@@ -85,7 +76,6 @@ const AddProductByAdmin = asyncHandler(async (req, res) => {
 
 // ───────────── 2. GET ALL PRODUCTS (Public/Users) ─────────────
 const GetAllProducts = asyncHandler(async (req, res) => {
-    // ୧. page ଏବଂ limit କୁ କ୍ୱେରୀରୁ ଆଣନ୍ତୁ (ଡିଫଲ୍ଟ ଭାବରେ page=1 ଏବଂ limit=12 ରଖାଯାଇଛି)
     const { 
         department, 
         collectionType, 
@@ -93,50 +83,40 @@ const GetAllProducts = asyncHandler(async (req, res) => {
         productType, 
         search, 
         sort,
-        page = 1,     // [NEW]
-        limit = 12    // [NEW]
+        page = 1,    
+        limit = 12   
     } = req.query;
 
-    // ଫିଲ୍ଟର୍ ଲଜିକ୍ (Filter Logic)
     let query = {};
     if (department) query.department = department;
     if (collectionType) query.collectionType = collectionType;
     if (curatedCollection) query.curatedCollection = curatedCollection;
     if (productType) query.productType = productType;
     
-    // ସର୍ଚ୍ଚ ଲଜିକ୍ (Search by Name)
     if (search) {
-        query.name = { $regex: search, $options: "i" }; // Case-insensitive search
+        query.name = { $regex: search, $options: "i" }; 
     }
 
-    // ସର୍ଟିଂ ଲଜିକ୍ (Sorting) - ନୂଆ ପ୍ରଡକ୍ଟ ପ୍ରଥମେ ଆସିବ
     let sortOption = { createdAt: -1 };
     if (sort === "price_low") sortOption = { originalPrice: 1 };
     if (sort === "price_high") sortOption = { originalPrice: -1 };
 
-    // ୨. Pagination ଗଣନା (Math)
     const pageNumber = parseInt(page, 10);
     const limitNumber = parseInt(limit, 10);
-    const skip = (pageNumber - 1) * limitNumber; // କେତୋଟି ପ୍ରଡକ୍ଟ ଛାଡିବେ ତାର ହିସାବ
+    const skip = (pageNumber - 1) * limitNumber; 
 
-    // ୩. Super Fast Parallel Execution (Promise.all)
     const [totalProducts, products] = await Promise.all([
-        // ପ୍ରଥମ କ୍ୱେରୀ: ଫିଲ୍ଟର୍ ଅନୁସାରେ ମୋଟ କେତେ ପ୍ରଡକ୍ଟ ଅଛି ତାହା ଗଣିବ
         Product.countDocuments(query),
-        
-        // ଦ୍ଵିତୀୟ କ୍ୱେରୀ: କେବଳ ଦରକାର ଥିବା ଲିମିଟ୍ ପ୍ରଡକ୍ଟ ଆଣିବ
         Product.find(query)
             .sort(sortOption)
-            .skip(skip)           // [NEW] ପୂର୍ବ ପେଜ୍ ର ଡାଟା ଛାଡିବା ପାଇଁ
-            .limit(limitNumber)   // [NEW] କେବଳ ୧୨ଟି ଡାଟା ଆଣିବା ପାଇଁ
+            .skip(skip)          
+            .limit(limitNumber)  
             .lean()
             .exec()
     ]);
 
-    // ୪. ସମୁଦାୟ ପେଜ୍ (Total Pages) ବାହାର କରିବା
     const totalPages = Math.ceil(totalProducts / limitNumber);
 
-    // ୫. ରେସ୍ପୋନ୍ସ (Response) କୁ ସଠିକ୍ ଢାଞ୍ଚାରେ ସଜାଇବା
     const responseData = {
         pagination: {
             totalProducts,
@@ -165,38 +145,27 @@ const GetProductById = asyncHandler(async (req, res) => {
 
 // ───────────── 4. UPDATE PRODUCT (Admin Only) ─────────────
 const UpdateProductByAdmin = asyncHandler(async (req, res) => {
-    // const { role } = req.user;  
-    // if (!["super_admin", "admin", "owner"].includes(role)) {
-    //     return sendApiResponse(res, statusCodes.FORBIDDEN, "You are not authorized to update this product.");
-    // }
+    const { id } = req.params; 
 
-    const { id } = req.params; // URL ରୁ Product ID ଆଣିବା
-
-    // ୧. ପ୍ରଥମେ ଚେକ୍ କରନ୍ତୁ ପ୍ରଡକ୍ଟ ଡାଟାବେସ୍ ରେ ଅଛି କି ନାହିଁ
     const existingProduct = await Product.findById(id);
     if (!existingProduct) {
         return sendApiResponse(res, statusCodes.NOT_FOUND, "Product not found.");
     }
 
-    const { name, mrp, originalPrice, description, department, collectionType, curatedCollection, productType, slug: customSlug } = req.body;
+    const { name, mrp, originalPrice, description, department, collectionType, curatedCollection, productType, sizeType, slug: customSlug } = req.body;
 
-    // ଏକ ଖାଲି ଅବଜେକ୍ଟ୍ ତିଆରି କରନ୍ତୁ ଯେଉଁଥିରେ କେବଳ ବଦଳିଥିବା ଡାଟା ରହିବ (Dynamic Update Payload)
     const updatePayload = {};
 
-    // ୨. Slug ଏବଂ Name ପରିଚାଳନା 
     if (name) {
         updatePayload.name = name;
-        // ଯଦି ନାମ ବଦଳିଛି କିମ୍ବା ନୂଆ slug ପଠାଯାଇଛି, ତେବେ ନୂଆ slug ଜେନେରେଟ୍ କରନ୍ତୁ
         const slugSource = customSlug || name;
         if (slugSource !== existingProduct.name && slugSource !== existingProduct.slug) {
-            // ବିଦ୍ର: generateUniqueSlug ରେ id ପଠାଇବା ଭଲ, ଯାହାଦ୍ୱାରା ନିଜର ପୁରୁଣା slug ସହ କନଫ୍ଲିକ୍ଟ (conflict) ହେବ ନାହିଁ
             updatePayload.slug = await generateUniqueSlug(Product, slugSource, id); 
         }
     } else if (customSlug) {
         updatePayload.slug = await generateUniqueSlug(Product, customSlug, id);
     }
 
-    // ୩. ସାଧାରଣ ଫିଲ୍ଡ ଗୁଡିକର ଅପଡେଟ୍ (ଯଦି ପଠାଯାଇଛି ତେବେ ହିଁ ଅପଡେଟ୍ ହେବ)
     if (originalPrice !== undefined) updatePayload.originalPrice = Number(originalPrice);
     if (mrp !== undefined) {
         updatePayload.mrp = Number(mrp);
@@ -207,29 +176,59 @@ const UpdateProductByAdmin = asyncHandler(async (req, res) => {
     if (description !== undefined) updatePayload.description = description;
     if (department !== undefined) updatePayload.department = department;
     if (productType !== undefined) updatePayload.productType = productType;
+    if (sizeType !== undefined) updatePayload.sizeType = sizeType; 
 
-    // JSON String ଗୁଡିକୁ Object/Array ରେ ପରିଣତ କରିବା
     if (req.body.collectionType !== undefined) updatePayload.collectionType = safeParse(req.body.collectionType, []);
     if (req.body.curatedCollection !== undefined) updatePayload.curatedCollection = safeParse(req.body.curatedCollection, []);
     if (req.body.sizes !== undefined) updatePayload.sizes = safeParse(req.body.sizes, []);
     if (req.body.productDetails !== undefined) updatePayload.productDetails = safeParse(req.body.productDetails, {});
 
-    // ୪. ଇମେଜ୍ ଅପଡେଟ୍ ଲଜିକ୍ (Hybrid Image Merging)
+    // ───────────── [NEW BULLETPROOF] SMART IMAGE HANDLING ─────────────
     let finalImages = [];
+    let retainedImages = [];
 
-    // Case A: ଫ୍ରଣ୍ଟଏଣ୍ଡ୍ ରୁ ଆସିଥିବା ପୁରୁଣା ଇମେଜ୍ ଲିଙ୍କ୍ କୁ ରଖିବା
+    // ୧. ବ୍ୟାକେଣ୍ଡ୍ କୁ ଆସିଥିବା ଲିଙ୍କ୍ କୁ ସଠିକ୍ ଭାବେ Array ରେ ପରିଣତ କରିବା
     if (req.body.productImages !== undefined) {
-        let parsedImages = safeParse(req.body.productImages, []);
-        if (!Array.isArray(parsedImages) && typeof req.body.productImages === 'string') {
-            parsedImages = [req.body.productImages];
+        const incomingImages = req.body.productImages;
+        
+        if (Array.isArray(incomingImages)) {
+            // ଏକାଧିକ ଲିଙ୍କ୍ ଆସିଲେ ଏହା Array ହୋଇଥାଏ
+            retainedImages = incomingImages; 
+        } else if (typeof incomingImages === 'string') {
+            // ଗୋଟିଏ ଲିଙ୍କ୍ କିମ୍ବା ଖାଲି ଷ୍ଟ୍ରିଙ୍ଗ୍ ଆସିଲେ
+            if (incomingImages.trim() === '') {
+                retainedImages = []; 
+            } else {
+                retainedImages = [incomingImages]; 
+            }
         }
-        finalImages = [...parsedImages]; // ପୁରୁଣା ଲିଙ୍କ୍ ଗୁଡିକୁ ଆରେ (Array) ରେ ରଖିଲୁ
+    } else if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
+        // ଯଦି FormData ଆସିଛି କିନ୍ତୁ productImages ଆସିନାହିଁ, ଏହାର ଅର୍ଥ UI ରୁ ସବୁ ପୁରୁଣା ଫଟୋ Remove କରାଯାଇଛି
+        retainedImages = [];
     } else {
-        // ଯଦି ଫ୍ରଣ୍ଟଏଣ୍ଡ୍ productImages ଫିଲ୍ଡ ଆଦୌ ପଠାଇନାହିଁ, ତେବେ ଡାଟାବେସ୍ ର ପୁରୁଣା ଇମେଜ୍ କୁ ଡିଫଲ୍ଟ ଭାବେ ରଖିବା
-        finalImages = [...existingProduct.productImages];
+        // ଯଦି କେବଳ JSON ଅପଡେଟ୍ ହେଉଛି, ତେବେ ପୁରୁଣା ଫଟୋ ଗୁଡିକୁ ସୁରକ୍ଷିତ ରଖିବା
+        retainedImages = [...existingProduct.productImages];
     }
 
-    // Case B: ନୂଆ ଫଟୋ (Files) ଆସିଥିଲେ ତାକୁ ଅପଲୋଡ୍ କରି ପୁରୁଣା ସହିତ ମିଶାଇବା
+    // ୨. ବାହାର କରନ୍ତୁ କେଉଁ ଫଟୋ ଗୁଡିକ UI ରୁ କଟାଯାଇଛି (ଯାହାକୁ ୟୁଜର୍ X ମାରିଛନ୍ତି)
+    const imagesToDelete = existingProduct.productImages.filter(
+        oldImgUrl => !retainedImages.includes(oldImgUrl)
+    );
+
+    // ୩. କେବଳ ସେହି କଟାଯାଇଥିବା ଫଟୋ ଗୁଡିକୁ R2 ରୁ ପରମାନେଣ୍ଟ୍ ଡିଲିଟ୍ କରିବା
+    if (imagesToDelete.length > 0) {
+        try {
+            await handleImageUpload(null, imagesToDelete);
+            console.log("Successfully deleted SPECIFIC old images from R2:", imagesToDelete);
+        } catch (error) {
+            console.error("Error deleting old images from Cloudflare R2:", error);
+        }
+    }
+
+    // ୪. ଯାହା ବଳିଲା ତାକୁ finalImages ରେ ରଖିବା
+    finalImages = [...retainedImages];
+
+    // ୫. ନୂଆ ଅପଲୋଡ୍ ହୋଇଥିବା ଫଟୋ ଗୁଡିକୁ R2 କୁ ପଠାଇ ମିଶାଇବା
     if (req.files && req.files.length > 0) {
         try {
             const uploadPromises = req.files.map(async (file) => {
@@ -246,7 +245,6 @@ const UpdateProductByAdmin = asyncHandler(async (req, res) => {
             });
 
             const newUploadedImages = await Promise.all(uploadPromises);
-            // ନୂଆ ଏବଂ ପୁରୁଣା ଇମେଜ୍ କୁ ଏକାସାଙ୍ଗରେ ମିଶାଇବା (Merge)
             finalImages = [...finalImages, ...newUploadedImages];
 
         } catch (error) {
@@ -255,11 +253,10 @@ const UpdateProductByAdmin = asyncHandler(async (req, res) => {
         }
     }
 
-    // ଅପଡେଟ୍ ପେଲୋଡ୍ ରେ ଫାଇନାଲ୍ ଇମେଜ୍ ଆରେ (Array) କୁ ଯୋଡିବା
+    // ଅପଡେଟ୍ ପେଲୋଡ୍ ରେ ଫାଇନାଲ୍ ଇମେଜ୍ ଆରେ କୁ ସେଭ୍ କରିବା
     updatePayload.productImages = finalImages;
 
-    // ୫. ଫାଇନାଲ୍ ଡାଟାବେସ୍ ଅପଡେଟ୍ (findByIdAndUpdate)
-    // { new: true } ର ଅର୍ଥ ହେଉଛି ଅପଡେଟ୍ ହେବା ପରେ ନୂଆ ଡାଟା ରିଟର୍ଣ୍ଣ କରିବ
+    // ───────────── ଡାଟାବେସ୍ ଅପଡେଟ୍ ─────────────
     const updatedProduct = await Product.findByIdAndUpdate(id, updatePayload, { 
         new: true, 
         runValidators: true 
@@ -270,12 +267,6 @@ const UpdateProductByAdmin = asyncHandler(async (req, res) => {
 
 // ───────────── 5. DELETE PRODUCT (Admin Only) ─────────────
 const DeleteProduct = asyncHandler(async (req, res) => {
-    // const { role } = req.user;
-
-    // if (!["super_admin", "admin", "owner"].includes(role)) {
-    //     return sendApiResponse(res, statusCodes.FORBIDDEN, "Unauthorized to delete product.");
-    // }
-
     const { id } = req.params;
     const product = await Product.findByIdAndDelete(id);
 
@@ -288,7 +279,8 @@ const DeleteProduct = asyncHandler(async (req, res) => {
             await handleImageUpload(null, product.productImages);
         } catch (error) {
             console.error("Error deleting image from Cloudflare R2: ", error);
-            // ଇମେଜ୍ ଡିଲିଟ୍ ରେ ଛୋଟ ଏରର୍ ଆସିଲେ ବି କ୍ଲିନିକ୍ ଡିଲିଟ୍ ପ୍ରୋସେସ୍ ଅଟକିବ ନାହିଁ
+            // [FIXED] 'କ୍ଲିନିକ୍' ବଦଳରେ 'ପ୍ରଡକ୍ଟ' ଲେଖାଗଲା
+            // ଇମେଜ୍ ଡିଲିଟ୍ ରେ ଛୋଟ ଏରର୍ ଆସିଲେ ବି ପ୍ରଡକ୍ଟ ଡିଲିଟ୍ ପ୍ରୋସେସ୍ ଅଟକିବ ନାହିଁ
         }
     }
     

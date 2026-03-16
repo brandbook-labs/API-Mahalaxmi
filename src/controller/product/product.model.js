@@ -29,16 +29,18 @@ const productSchema = new mongoose.Schema(
         },
         description: {
             type: String,
-            // required: true,
         },
         
         // ───────────── Multiple Sizes & Inventory Handling ─────────────
+        // [UPDATED] ସବୁ ପ୍ରକାରର ସାଇଜ୍ କୁ ଗ୍ରହଣ କରିବା ପାଇଁ Enum କୁ ହଟାଗଲା
         sizes: [
             {
                 sizeName: { 
                     type: String, 
-                    enum: ["xs", "s", "m", "l", "xl", "xxl", "free_size"], // URL friendly
-                    required: true 
+                    required: true,
+                    trim: true,
+                    lowercase: true, 
+                    // ଉଦାହରଣ: "s", "m", "xl", "28", "30", "uk_7", "ring_14", "free_size"
                 },
                 stock: { 
                     type: Number, 
@@ -46,13 +48,20 @@ const productSchema = new mongoose.Schema(
                     default: 0,
                     min: 0 
                 },
-                // ଯଦି କୌଣସି ବିଶେଷ ସାଇଜ୍ ପାଇଁ ଅଧିକ ଦାମ୍ ଥାଏ (Optional)
                 additionalPrice: { 
                     type: Number, 
                     default: 0 
                 }
             }
         ],
+
+        // [NEW] ଏହି ଫିଲ୍ଡ ଆମକୁ ଜଣାଇବ ଯେ ସାଇଜ୍ ଚାର୍ଟ (Size Chart) କିପରି ଦେଖାଇବାକୁ ହେବ
+        // ଉଦାହରଣ: 'clothing' ପାଇଁ S, M, L... 'waist' ପାଇଁ 28, 30... 'footwear' ପାଇଁ UK 7, 8...
+        sizeType: {
+            type: String,
+            enum: ["clothing", "waist", "footwear", "ring", "none"],
+            default: "clothing"
+        },
 
         productDetails: {
             fabric: String,
@@ -78,12 +87,22 @@ const productSchema = new mongoose.Schema(
             enum: ["new_arrivals", "best_sellers", "trending"],
             index: true, 
         },
+        
+        // [UPDATED] Product Type ରେ ଆହୁରି ଅନେକ ବିକଳ୍ପ ଯୋଡାଗଲା
         productType: {
             type: String,
-            // ଆପଣ ନିଜ ଇଚ୍ଛା ଅନୁସାରେ ଆହୁରି ଅପସନ୍ ଯୋଡି ପାରିବେ
-            enum: ["saree", "lehenga", "suit_set", "coat", "jewelry", "bag", "footwear", "tshirt", "jeans"],
+            enum: [
+                // Indian Wear
+                "saree", "lehenga", "suit_set", "kurta", "dupatta", 
+                // Western Wear
+                "tshirt", "jeans", "trouser", "shirt", "top", "dress", "coat", "jacket",
+                // Accessories
+                "Jewellery", "bag", "footwear", "watch", "perfume", "belt",
+                // Other
+                "other"
+            ],
             required: true,
-            index: true, // ୟୁଜର୍ କେବଳ 'saree' ସର୍ଚ୍ଚ କଲେ ଫାଷ୍ଟ୍ ରେଜଲ୍ଟ ଆସିବ
+            index: true,
         },
 
         // ───────────── Rating Summary (Fast Homepage Load) ─────────────
