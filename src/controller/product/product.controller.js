@@ -283,14 +283,14 @@ const DeleteProduct = asyncHandler(async (req, res) => {
         return sendApiResponse(res, statusCodes.NOT_FOUND, "Product not found.");
     }
 
-    // if (product.productImages) {
-    //     try {
-    //         await handleImageUpload(null, product.productImages);
-    //     } catch (error) {
-    //         console.error("Error deleting image from Cloudflare R2: ", error);
-    //         // ଇମେଜ୍ ଡିଲିଟ୍ ରେ ଛୋଟ ଏରର୍ ଆସିଲେ ବି କ୍ଲିନିକ୍ ଡିଲିଟ୍ ପ୍ରୋସେସ୍ ଅଟକିବ ନାହିଁ
-    //     }
-    // }
+    if (product.productImages) {
+        try {
+            await handleImageUpload(null, product.productImages);
+        } catch (error) {
+            console.error("Error deleting image from Cloudflare R2: ", error);
+            // ଇମେଜ୍ ଡିଲିଟ୍ ରେ ଛୋଟ ଏରର୍ ଆସିଲେ ବି କ୍ଲିନିକ୍ ଡିଲିଟ୍ ପ୍ରୋସେସ୍ ଅଟକିବ ନାହିଁ
+        }
+    }
     
     return sendApiResponse(res, statusCodes.OK, "Product deleted successfully!");
 });
