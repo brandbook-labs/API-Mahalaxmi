@@ -14,7 +14,7 @@ const verifyToken = require("../../middleware/verify-token.middleware");
 
 // ───────────── Public Routes (ସମସ୍ତେ ଦେଖିପାରିବେ) ─────────────
 router.get("/", GetAllProducts);
-router.get("/:id", GetProductById);
+router.get("/:slug", GetProductById);
 
 // ───────────── Admin/Owner Routes ─────────────
 router.post(

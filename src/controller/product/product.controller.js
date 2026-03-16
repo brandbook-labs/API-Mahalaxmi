@@ -154,7 +154,7 @@ const GetAllProducts = asyncHandler(async (req, res) => {
 const GetProductById = asyncHandler(async (req, res) => {
     const { slug } = req.params;
 
-    const product = await Product.findOne(slug).lean().exec();
+    const product = await Product.findOne({ slug }).lean().exec();
 
     if (!product) {
         return sendApiResponse(res, statusCodes.NOT_FOUND, "Product not found.");
