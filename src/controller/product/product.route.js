@@ -10,7 +10,7 @@ const {
     UpdateProductByAdmin,
     DeleteProduct
 } = require("./product.controller");
-const verifyToken = require("../../middleware/verify-token.middleware");
+const { verifyToken } = require("../../middleware/verify-token.middleware");
 
 // ───────────── Public Routes (ସମସ୍ତେ ଦେଖିପାରିବେ) ─────────────
 router.get("/", GetAllProducts);
