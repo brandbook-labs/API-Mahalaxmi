@@ -62,8 +62,8 @@ const placeOrder = asyncHandler(async (req, res) => {
     };
 
     // ଯଦି ୟୁଜର୍ ଲଗିନ୍ ଅଛନ୍ତି (req.user ଥିଲେ), ତେବେ ତାଙ୍କ ID ଯୋଡନ୍ତୁ
-    if (req.user && req.user.id) {
-        orderPayload.user = req.user.id;
+    if (req.user && req.user.user_id) {
+        orderPayload.user = req.user.user_id;
     }
 
     // ୫. ଡାଟାବେସ୍ ରେ ଅର୍ଡର ସେଭ୍ କରନ୍ତୁ
@@ -144,8 +144,24 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     return sendApiResponse(res, statusCodes.OK, "Order status updated successfully", order);
 });
 
+// ───────────── GET MY ORDERS (Logged-in customer) ─────────────
+const getMyOrders = asyncHandler(async (req, res) => {
+    // verifyToken middleware guarantees req.user exists on this route.
+    const orders = await Order.find({ user: req.user.user_id })
+        .populate({
+            path: "products.product",
+            select: "name"
+        })
+        .sort({ createdAt: -1 })
+        .lean()
+        .exec();
+
+    return sendApiResponse(res, statusCodes.OK, "Orders fetched successfully", { orders });
+});
+
 module.exports = {
     placeOrder,
+    getMyOrders,
     getAllOrders,
     updateOrderStatus
 };

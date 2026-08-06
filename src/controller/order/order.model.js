@@ -3,10 +3,11 @@ const mongoose = require("mongoose");
 const orderSchema = new mongoose.Schema(
     {
         // ଯଦି ୟୁଜର୍ ଲଗିନ୍ ଅଛନ୍ତି, ତେବେ ତାଙ୍କ ID ରହିବ (Guest checkout ପାଇଁ ଏହା optional ରଖାଯାଇଛି)
-        // user: {
-        //     type: mongoose.Schema.Types.ObjectId,
-        //     ref: "User",
-        // },
+        user: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "User",
+            index: true,
+        },
         
         // ───────────── Contact Details ─────────────
         name: {
@@ -65,6 +66,12 @@ const orderSchema = new mongoose.Schema(
             type: String,
             enum: ["pending", "processing", "shipped", "out_for_delivery", "delivered", "cancelled"],
             default: "pending",
+        },
+
+        // Set only for prepaid (paymentMethod: "online") orders, useful for
+        // reconciling against your Razorpay dashboard later.
+        razorpayPaymentId: {
+            type: String,
         },
     },
     { timestamps: true }

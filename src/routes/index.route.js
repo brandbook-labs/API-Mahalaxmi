@@ -5,6 +5,7 @@ const router = express.Router();
 const adminRoutes = require("../controller/admin/admin.routes");
 const productRoutes = require("../controller/product/product.route");
 const orderRoutes = require("../controller/order/order.routes");
+const authRoutes = require("../controller/auth/auth.routes");
 
 // API Versioning (ବେଷ୍ଟ୍ ପ୍ରାକ୍ଟିସ୍)
 const API_VERSION = "/api/v1";
@@ -13,6 +14,7 @@ const API_VERSION = "/api/v1";
 router.use(`${API_VERSION}/admin`, adminRoutes);
 router.use(`${API_VERSION}/products`, productRoutes);
 router.use(`${API_VERSION}/order`, orderRoutes);
+router.use(`${API_VERSION}/auth`, authRoutes);
 
 // Health Check Route (ସର୍ଭର ଚାଲୁଛି କି ନାହିଁ ଜାଣିବା ପାଇଁ)
 router.get("/health", (req, res) => {
