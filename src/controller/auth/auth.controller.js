@@ -47,7 +47,14 @@ const requestOtp = asyncHandler(async (req, res) => {
         return sendApiResponse(res, statusCodes.INTERNAL_SERVER_ERROR, "Could not send OTP. Please try again.");
     }
 
-    return sendApiResponse(res, statusCodes.OK, "OTP sent successfully.");
+    // Dev mode only, no real SMS provider configured yet: return the OTP
+    // directly in the response so the app can show it on screen. This
+    // stops automatically the moment MSG91_AUTH_KEY is set, since
+    // smsResult.devMode becomes false then, nothing to remember to
+    // switch off manually later.
+    const responseData = smsResult.devMode ? { otp, devMode: true } : null;
+
+    return sendApiResponse(res, statusCodes.OK, "OTP sent successfully.", responseData);
 });
 
 // ───────────── VERIFY OTP ─────────────
