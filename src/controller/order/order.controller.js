@@ -3,6 +3,7 @@ const { asyncHandler } = require("../../utils/asyncHandler");
 const { sendApiResponse } = require("../../utils/responseUtils");
 const Order = require("./order.model");
 const Product = require("../product/product.model");
+const User = require("../user/user.model");
 
 // ───────────── PLACE ORDER ─────────────
 const placeOrder = asyncHandler(async (req, res) => {
@@ -159,9 +160,38 @@ const getMyOrders = asyncHandler(async (req, res) => {
     return sendApiResponse(res, statusCodes.OK, "Orders fetched successfully", { orders });
 });
 
+// ───────────── LINK ORDER TO A JUST-VERIFIED ACCOUNT ─────────────
+// A guest can place an order (COD or online) before ever signing in,
+// this is what runs right after they verify their phone via OTP
+// afterward: it attaches that order to their now-real account, and
+// corrects the order's contact phone to match whatever number they
+// actually verified, in case what they originally typed had a mistake.
+// verifyToken guarantees req.user exists, that token only exists
+// because /auth/verify-otp just issued it for real.
+const linkOrderToUser = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const order = await Order.findById(id);
+    if (!order) {
+        return sendApiResponse(res, statusCodes.NOT_FOUND, "Order not found.");
+    }
+
+    const user = await User.findById(req.user.user_id);
+    if (!user) {
+        return sendApiResponse(res, statusCodes.NOT_FOUND, "Account not found.");
+    }
+
+    order.user = user._id;
+    order.phone = user.phone;
+    await order.save();
+
+    return sendApiResponse(res, statusCodes.OK, "Order linked to your account.", order);
+});
+
 module.exports = {
     placeOrder,
     getMyOrders,
+    linkOrderToUser,
     getAllOrders,
     updateOrderStatus
 };
