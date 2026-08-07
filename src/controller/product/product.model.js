@@ -12,6 +12,12 @@ const productSchema = new mongoose.Schema(
             unique: true,
             index: true
         },
+        // ───────────── [NEW] Product Lifecycle Status ─────────────
+        status: {
+            type: String,
+            enum: ['active', 'draft'],
+            default: 'active'
+        },
         productImages: [
             {
                 type: String,
@@ -31,13 +37,11 @@ const productSchema = new mongoose.Schema(
             type: String,
         },
         
-        // ───────────── [NEW] Video Support ─────────────
         videoUrl: {
             type: String
         },
 
         // ───────────── Multiple Sizes & Inventory Handling ─────────────
-        // [UPDATED] ସବୁ ପ୍ରକାରର ସାଇଜ୍ କୁ ଗ୍ରହଣ କରିବା ପାଇଁ Enum କୁ ହଟାଗଲା
         sizes: [
             {
                 sizeName: { 
@@ -45,7 +49,6 @@ const productSchema = new mongoose.Schema(
                     required: true,
                     trim: true,
                     lowercase: true, 
-                    // ଉଦାହରଣ: "s", "m", "xl", "28", "30", "uk_7", "ring_14", "free_size"
                 },
                 stock: { 
                     type: Number, 
@@ -60,8 +63,6 @@ const productSchema = new mongoose.Schema(
             }
         ],
 
-        // [NEW] ଏହି ଫିଲ୍ଡ ଆମକୁ ଜଣାଇବ ଯେ ସାଇଜ୍ ଚାର୍ଟ (Size Chart) କିପରି ଦେଖାଇବାକୁ ହେବ
-        // ଉଦାହରଣ: 'clothing' ପାଇଁ S, M, L... 'waist' ପାଇଁ 28, 30... 'footwear' ପାଇଁ UK 7, 8...
         sizeType: {
             type: String,
             enum: ["clothing", "waist", "footwear", "ring", "none"],
@@ -71,7 +72,8 @@ const productSchema = new mongoose.Schema(
         productDetails: {
             fabric: String,
             work: String,
-            inclusions: String
+            inclusions: String,
+            washCare: String // [NEW] Added WashCare
         }, 
         
         // ───────────── Optimized Categories (Snake Case) ─────────────
@@ -93,21 +95,43 @@ const productSchema = new mongoose.Schema(
             index: true, 
         },
         
-        // [UPDATED] Product Type ରେ ଆହୁରି ଅନେକ ବିକଳ୍ପ ଯୋଡାଗଲା
         productType: {
             type: String,
             enum: [
-                // Indian Wear
                 "saree", "lehenga", "suit_set", "kurta", "dupatta", 
-                // Western Wear
                 "tshirt", "jeans", "trouser", "shirt", "top", "dress", "coat", "jacket",
-                // Accessories
                 "Jewellery", "bag", "footwear", "watch", "perfume", "belt",
-                // Other
                 "other"
             ],
             required: true,
             index: true,
+        },
+
+        // ───────────── [NEW] Smart Taxonomies & Search Engine Tags ─────────────
+        occasions: {
+            type: [String],
+            index: true
+        },
+        colors: {
+            type: [String],
+            index: true
+        },
+        tags: {
+            type: [String],
+            index: true // Helps with fast text-search filtering
+        },
+
+        // ───────────── [NEW] Logistics & Tax ─────────────
+        shipping: {
+            weightGm: { type: Number },
+            hsnCode: { type: String }
+        },
+
+        // ───────────── [NEW] SEO Optimization ─────────────
+        seo: {
+            metaTitle: { type: String },
+            metaDescription: { type: String },
+            slug: { type: String }
         },
 
         // ───────────── Rating Summary (Fast Homepage Load) ─────────────

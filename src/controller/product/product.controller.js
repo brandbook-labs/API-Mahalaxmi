@@ -9,21 +9,24 @@ const { generateUniqueSlug } = require("../../utils/slug-helper");
 
 // ───────────── 1. ADD PRODUCT (Admin Only) ─────────────
 const AddProductByAdmin = asyncHandler(async (req, res) => {
-    // [UPDATED] Extracted videoUrl from req.body
-    const { name, mrp, originalPrice, description, department, collectionType, curatedCollection, productType, sizeType, videoUrl } = req.body;
+    // [UPDATED] Extracted new smart fields: status
+    const { name, mrp, originalPrice, description, department, collectionType, curatedCollection, productType, sizeType, videoUrl, status } = req.body;
 
     if (!name || !mrp || !originalPrice) {
         return sendApiResponse(res, statusCodes.BAD_REQUEST, "Name, MRP, and Original Price are required.");
     }
 
-    // 1️⃣ Generate slug from slug or name
-    const slugSource = req.body.slug || name;
+    // [NEW] Parse SEO to extract slug if frontend sent it via the new SEO block
+    const parsedSeo = safeParse(req.body.seo, {});
+
+    // 1️⃣ Generate slug from slug or name (Prioritize new SEO slug)
+    const slugSource = parsedSeo.slug || req.body.slug || name;
 
     if (!slugSource) {
         return sendApiResponse(
             res,
             statusCodes.BAD_REQUEST,
-            "Product name or slug is required" // [FIXED] Clinic ବଦଳରେ Product ଲେଖାଗଲା
+            "Product name or slug is required" 
         );
     }
 
@@ -38,10 +41,18 @@ const AddProductByAdmin = asyncHandler(async (req, res) => {
         description,
         department,
         productType,
-        sizeType: sizeType || "clothing", // [NEW] ଡାଟାବେସ୍ ରେ sizeType ସେଭ୍ କରିବା ପାଇଁ
-        videoUrl: videoUrl || null, // [NEW] Added videoUrl mapping
+        sizeType: sizeType || "clothing", 
+        videoUrl: videoUrl || null, 
+        status: status || 'active', // [NEW] Smart Status Added
         collectionType: safeParse(req.body.collectionType, []),
         curatedCollection: safeParse(req.body.curatedCollection, []),
+        // [NEW] Smart Tags & Logistics Added Below
+        occasions: safeParse(req.body.occasions, []),
+        colors: safeParse(req.body.colors, []),
+        tags: safeParse(req.body.tags, []),
+        shipping: safeParse(req.body.shipping, {}),
+        seo: parsedSeo,
+        // ----------------------------------------
         sizes: safeParse(req.body.sizes, []), 
         productDetails: safeParse(req.body.productDetails, {}),
     };
@@ -154,19 +165,25 @@ const UpdateProductByAdmin = asyncHandler(async (req, res) => {
         return sendApiResponse(res, statusCodes.NOT_FOUND, "Product not found.");
     }
 
-    // [UPDATED] Extracted videoUrl from req.body
-    const { name, mrp, originalPrice, description, department, collectionType, curatedCollection, productType, sizeType, slug: customSlug, videoUrl } = req.body;
+    // [UPDATED] Extracted status from req.body
+    const { name, mrp, originalPrice, description, department, collectionType, curatedCollection, productType, sizeType, slug: customSlug, videoUrl, status } = req.body;
 
     const updatePayload = {};
 
+    // [NEW] Extract slug from new SEO object if provided
+    const parsedSeo = req.body.seo !== undefined ? safeParse(req.body.seo, {}) : null;
+    const smartSlugSource = parsedSeo?.slug || customSlug;
+
     if (name) {
         updatePayload.name = name;
-        const slugSource = customSlug || name;
+        const slugSource = smartSlugSource || name;
         if (slugSource !== existingProduct.name && slugSource !== existingProduct.slug) {
             updatePayload.slug = await generateUniqueSlug(Product, slugSource, id); 
         }
-    } else if (customSlug) {
-        updatePayload.slug = await generateUniqueSlug(Product, customSlug, id);
+    } else if (smartSlugSource) {
+        if (smartSlugSource !== existingProduct.slug) {
+            updatePayload.slug = await generateUniqueSlug(Product, smartSlugSource, id);
+        }
     }
 
     if (originalPrice !== undefined) updatePayload.originalPrice = Number(originalPrice);
@@ -181,11 +198,19 @@ const UpdateProductByAdmin = asyncHandler(async (req, res) => {
     if (productType !== undefined) updatePayload.productType = productType;
     if (sizeType !== undefined) updatePayload.sizeType = sizeType; 
     
-    // [NEW] Map updated video URL to payload
     if (videoUrl !== undefined) updatePayload.videoUrl = videoUrl;
+    if (status !== undefined) updatePayload.status = status; // [NEW]
 
     if (req.body.collectionType !== undefined) updatePayload.collectionType = safeParse(req.body.collectionType, []);
     if (req.body.curatedCollection !== undefined) updatePayload.curatedCollection = safeParse(req.body.curatedCollection, []);
+    
+    // [NEW] Apply Smart Categories/Tags
+    if (req.body.occasions !== undefined) updatePayload.occasions = safeParse(req.body.occasions, []);
+    if (req.body.colors !== undefined) updatePayload.colors = safeParse(req.body.colors, []);
+    if (req.body.tags !== undefined) updatePayload.tags = safeParse(req.body.tags, []);
+    if (req.body.shipping !== undefined) updatePayload.shipping = safeParse(req.body.shipping, {});
+    if (parsedSeo !== null) updatePayload.seo = parsedSeo;
+
     if (req.body.sizes !== undefined) updatePayload.sizes = safeParse(req.body.sizes, []);
     if (req.body.productDetails !== undefined) updatePayload.productDetails = safeParse(req.body.productDetails, {});
 
@@ -198,10 +223,8 @@ const UpdateProductByAdmin = asyncHandler(async (req, res) => {
         const incomingImages = req.body.productImages;
         
         if (Array.isArray(incomingImages)) {
-            // ଏକାଧିକ ଲିଙ୍କ୍ ଆସିଲେ ଏହା Array ହୋଇଥାଏ
             retainedImages = incomingImages; 
         } else if (typeof incomingImages === 'string') {
-            // ଗୋଟିଏ ଲିଙ୍କ୍ କିମ୍ବା ଖାଲି ଷ୍ଟ୍ରିଙ୍ଗ୍ ଆସିଲେ
             if (incomingImages.trim() === '') {
                 retainedImages = []; 
             } else {
@@ -209,10 +232,8 @@ const UpdateProductByAdmin = asyncHandler(async (req, res) => {
             }
         }
     } else if (req.headers['content-type'] && req.headers['content-type'].includes('multipart/form-data')) {
-        // ଯଦି FormData ଆସିଛି କିନ୍ତୁ productImages ଆସିନାହିଁ, ଏହାର ଅର୍ଥ UI ରୁ ସବୁ ପୁରୁଣା ଫଟୋ Remove କରାଯାଇଛି
         retainedImages = [];
     } else {
-        // ଯଦି କେବଳ JSON ଅପଡେଟ୍ ହେଉଛି, ତେବେ ପୁରୁଣା ଫଟୋ ଗୁଡିକୁ ସୁରକ୍ଷିତ ରଖିବା
         retainedImages = [...existingProduct.productImages];
     }
 
@@ -285,8 +306,6 @@ const DeleteProduct = asyncHandler(async (req, res) => {
             await handleImageUpload(null, product.productImages);
         } catch (error) {
             console.error("Error deleting image from Cloudflare R2: ", error);
-            // [FIXED] 'କ୍ଲିନିକ୍' ବଦଳରେ 'ପ୍ରଡକ୍ଟ' ଲେଖାଗଲା
-            // ଇମେଜ୍ ଡିଲିଟ୍ ରେ ଛୋଟ ଏରର୍ ଆସିଲେ ବି ପ୍ରଡକ୍ଟ ଡିଲିଟ୍ ପ୍ରୋସେସ୍ ଅଟକିବ ନାହିଁ
         }
     }
     
