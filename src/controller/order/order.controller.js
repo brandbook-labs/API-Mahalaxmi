@@ -198,27 +198,22 @@ const linkOrderToUser = asyncHandler(async (req, res) => {
 const getOrderTracking = asyncHandler(async (req, res) => {
     const { id } = req.params;
 
-    const order = await Order.findById(id);
+    // .lean() guarantees we get the full, raw JSON document 
+    // .populate() ensures we get the product names for the "Items" card
+    const order = await Order.findById(id).populate({
+        path: "products.product"
+    }).lean();
+
     if (!order) {
         return sendApiResponse(res, statusCodes.NOT_FOUND, "Order not found.");
     }
 
-    // Security check: Make sure this order belongs to the user requesting it
     if (order.user && order.user.toString() !== req.user.user_id) {
-        return sendApiResponse(res, statusCodes.FORBIDDEN, "Not authorized to view this order's tracking.");
+        return sendApiResponse(res, statusCodes.FORBIDDEN, "Not authorized.");
     }
 
-    // Send back the tracking specific fields based on your model
-    const trackingInfo = {
-        orderId: order._id,
-        currentStatus: order.orderStatus,
-        awbNumber: order.awbNumber,
-        courierName: order.courierName,
-        estimatedDelivery: order.estimatedDelivery,
-        statusHistory: order.statusHistory
-    };
-
-    return sendApiResponse(res, statusCodes.OK, "Tracking details fetched", trackingInfo);
+    // Return the ENTIRE order object so Flutter has everything it needs
+    return sendApiResponse(res, statusCodes.OK, "Tracking details fetched", order);
 });
 
 module.exports = {
