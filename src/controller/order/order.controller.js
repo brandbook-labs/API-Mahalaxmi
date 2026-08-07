@@ -20,17 +20,42 @@ const placeOrder = asyncHandler(async (req, res) => {
         return sendApiResponse(res, statusCodes.BAD_REQUEST, "All fields and products are required.");
     }
 
-    // ୨. Security Check: Calculate total price on the backend
+    // ୨. Security Check: Calculate total price on the backend & Validate Stock
     let calculatedSubtotal = 0;
     const verifiedProducts = [];
+    const stockUpdates = []; // ଷ୍ଟକ୍ ଅପଡେଟ୍ ଟ୍ରାକ୍ କରିବା ପାଇଁ
 
-    // Promise.all ବ୍ୟବହାର କରି ସବୁ ପ୍ରଡକ୍ଟ ର ଡାଟାବେସ୍ ପ୍ରାଇସ୍ ଚେକ୍ କରିବା
-    await Promise.all(products.map(async (item) => {
+    // Promise.all ବଦଳରେ for...of ଲୁପ୍ ବ୍ୟବହାର କରିବା ଯାହାଦ୍ୱାରା ଷ୍ଟକ୍ ସରିଯାଇଥିଲେ ତୁରନ୍ତ Error ଦେଇପାରିବା
+    for (const item of products) {
         const dbProduct = await Product.findById(item.product);
         
         if (!dbProduct) {
-            throw new Error(`Product with ID ${item.product} not found.`);
+            return sendApiResponse(res, statusCodes.NOT_FOUND, `Product with ID ${item.product} not found.`);
         }
+
+        // ଷ୍ଟକ୍ ଚେକ୍ କରିବା (Overselling ରୋକିବା ପାଇଁ)
+        const requestedSizeStr = item.size ? item.size.toLowerCase().trim() : "free_size";
+        const sizeData = dbProduct.sizes.find(s => s.sizeName === requestedSizeStr);
+
+        if (!sizeData) {
+            return sendApiResponse(res, statusCodes.BAD_REQUEST, `Size '${item.size}' is not available for ${dbProduct.name}.`);
+        }
+
+        // [NEW] ଯଦି ଗ୍ରାହକ ଷ୍ଟକ୍ ଠାରୁ ଅଧିକ ଅର୍ଡର କରୁଛନ୍ତି, ତେବେ ଅଟକାଇବା
+        if (sizeData.stock < item.quantity) {
+            return sendApiResponse(
+                res, 
+                statusCodes.BAD_REQUEST, 
+                `Sorry, only ${sizeData.stock} units left for ${dbProduct.name} (Size: ${item.size}).`
+            );
+        }
+
+        // କେଉଁ ପ୍ରଡକ୍ଟ ରୁ କେତେ ଷ୍ଟକ୍ କାଟିବାକୁ ହେବ ତାହା ସେଭ୍ କରିବା
+        stockUpdates.push({
+            productId: dbProduct._id,
+            sizeName: requestedSizeStr,
+            quantityToDeduct: item.quantity
+        });
 
         const itemTotal = dbProduct.originalPrice * item.quantity;
         calculatedSubtotal += itemTotal;
@@ -41,7 +66,7 @@ const placeOrder = asyncHandler(async (req, res) => {
             quantity: item.quantity,
             price: dbProduct.originalPrice // ଫ୍ରଣ୍ଟଏଣ୍ଡ୍ ପ୍ରାଇସ୍ ବଦଳରେ ଡାଟାବେସ୍ ପ୍ରାଇସ୍ ସେଭ୍ କରନ୍ତୁ
         });
-    }));
+    }
 
     // ୩. GST ଏବଂ Total ହିସାବ (ଉଦାହରଣ: 18% GST)
     // ଆପଣ ଆପଣଙ୍କର ଲଜିକ୍ ଅନୁସାରେ GST ହିସାବ ବଦଳାଇ ପାରିବେ (ଯେପରିକି ଆପଣଙ୍କ ଫଟୋରେ 42372 + 7628 = 50000 ଅଛି)
@@ -59,7 +84,7 @@ const placeOrder = asyncHandler(async (req, res) => {
             gst: calculatedGst,
             totalPrice: finalTotalPrice,
         },
-        paymentMethod: paymentMethod || "Cash on Delivery",
+        paymentMethod: paymentMethod || "cash_on_delivery",
         // Seeds the tracking timeline with a real first entry the
         // moment the order exists, rather than starting empty.
         statusHistory: [{ status: "pending", timestamp: new Date() }],
@@ -72,6 +97,14 @@ const placeOrder = asyncHandler(async (req, res) => {
 
     // ୫. ଡାଟାବେସ୍ ରେ ଅର୍ଡର ସେଭ୍ କରନ୍ତୁ
     const newOrder = await Order.create(orderPayload);
+
+    // [NEW] ୬. ଡାଟାବେସ୍ ରୁ ଷ୍ଟକ୍ କାଟିବା ($inc ବ୍ୟବହାର କରି)
+    for (const update of stockUpdates) {
+        await Product.updateOne(
+            { _id: update.productId, "sizes.sizeName": update.sizeName },
+            { $inc: { "sizes.$.stock": -update.quantityToDeduct } }
+        );
+    }
 
     const populatedOrder = await Order.findById(newOrder._id).populate({
         path: "products.product",
@@ -126,6 +159,17 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     const order = await Order.findById(id);
     if (!order) {
         return sendApiResponse(res, statusCodes.NOT_FOUND, "Order not found");
+    }
+
+    // [NEW] ଯଦି ଅର୍ଡର କ୍ୟାନ୍ସଲ୍ (cancelled) ହେଉଛି ଏବଂ ଆଗରୁ କ୍ୟାନ୍ସଲ୍ ହୋଇନଥିଲା, ତେବେ ଷ୍ଟକ୍ ଫେରାଇବା
+    if (orderStatus === "cancelled" && order.orderStatus !== "cancelled") {
+        for (const item of order.products) {
+            const requestedSizeStr = item.size ? item.size.toLowerCase().trim() : "free_size";
+            await Product.updateOne(
+                { _id: item.product, "sizes.sizeName": requestedSizeStr },
+                { $inc: { "sizes.$.stock": item.quantity } } // ଯେତିକି କିଣିଥିଲେ ସେତିକି ଷ୍ଟକ୍ ରେ ଯୋଡିଦେବା
+            );
+        }
     }
 
     // ଯଦି ନୂଆ ଷ୍ଟାଟସ୍ ଆସିଥାଏ, ତେବେ ତାହାକୁ ଅପଡେଟ୍ କରନ୍ତୁ
@@ -194,6 +238,7 @@ const linkOrderToUser = asyncHandler(async (req, res) => {
 
     return sendApiResponse(res, statusCodes.OK, "Order linked to your account.", order);
 });
+
 // ───────────── GET ORDER TRACKING ─────────────
 const getOrderTracking = asyncHandler(async (req, res) => {
     const { id } = req.params;
