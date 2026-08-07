@@ -69,7 +69,6 @@ const placeOrder = asyncHandler(async (req, res) => {
     }
 
     // ୩. GST ଏବଂ Total ହିସାବ (ଉଦାହରଣ: 18% GST)
-    // ଆପଣ ଆପଣଙ୍କର ଲଜିକ୍ ଅନୁସାରେ GST ହିସାବ ବଦଳାଇ ପାରିବେ (ଯେପରିକି ଆପଣଙ୍କ ଫଟୋରେ 42372 + 7628 = 50000 ଅଛି)
     const calculatedGst = Math.round(calculatedSubtotal * 0.18); 
     const finalTotalPrice = calculatedSubtotal + calculatedGst;
 
@@ -111,8 +110,6 @@ const placeOrder = asyncHandler(async (req, res) => {
         select: "name" // କେବଳ ନାମ ଦରକାର
     });
 
-    // ଏଠାରେ ଆପଣ ୟୁଜର୍ କୁ SMS କିମ୍ବା Email (Order Confirmation) ପଠାଇପାରିବେ
-
     return sendApiResponse(
         res, 
         statusCodes.CREATED, 
@@ -124,7 +121,6 @@ const placeOrder = asyncHandler(async (req, res) => {
 // ───────────── ୨. GET ALL ORDERS (Admin) ─────────────
 const getAllOrders = asyncHandler(async (req, res) => {
     const orders = await Order.find()
-        // .populate("user", "name email") 
         .populate({
             path: "products.product",
             select: "name" // କେବଳ ନାମ ଦରକାର
@@ -140,8 +136,8 @@ const getAllOrders = asyncHandler(async (req, res) => {
 const updateOrderStatus = asyncHandler(async (req, res) => {
     const { id } = req.params;
     
-    // Body ରୁ ଉଭୟ ଷ୍ଟାଟସ୍ ଆଣନ୍ତୁ
-    const { orderStatus, paymentStatus } = req.body; 
+    // [UPDATED] Body ରୁ ଉଭୟ ଷ୍ଟାଟସ୍ ଏବଂ ନୂଆ Tracking Details ଆଣନ୍ତୁ
+    const { orderStatus, paymentStatus, awbNumber, courierName, estimatedDelivery } = req.body; 
 
     // ସଠିକ୍ enum ଭ୍ୟାଲୁ ଗୁଡିକର ତାଲିକା (Validation ପାଇଁ)
     const validOrderStatuses = ["pending", "processing", "shipped", "out_for_delivery", "delivered", "cancelled"];
@@ -161,7 +157,7 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
         return sendApiResponse(res, statusCodes.NOT_FOUND, "Order not found");
     }
 
-    // [NEW] ଯଦି ଅର୍ଡର କ୍ୟାନ୍ସଲ୍ (cancelled) ହେଉଛି ଏବଂ ଆଗରୁ କ୍ୟାନ୍ସଲ୍ ହୋଇନଥିଲା, ତେବେ ଷ୍ଟକ୍ ଫେରାଇବା
+    // ଯଦି ଅର୍ଡର କ୍ୟାନ୍ସଲ୍ (cancelled) ହେଉଛି ଏବଂ ଆଗରୁ କ୍ୟାନ୍ସଲ୍ ହୋଇନଥିଲା, ତେବେ ଷ୍ଟକ୍ ଫେରାଇବା
     if (orderStatus === "cancelled" && order.orderStatus !== "cancelled") {
         for (const item of order.products) {
             const requestedSizeStr = item.size ? item.size.toLowerCase().trim() : "free_size";
@@ -175,14 +171,16 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     // ଯଦି ନୂଆ ଷ୍ଟାଟସ୍ ଆସିଥାଏ, ତେବେ ତାହାକୁ ଅପଡେଟ୍ କରନ୍ତୁ
     if (orderStatus) {
         order.orderStatus = orderStatus;
-        // Every real status change gets recorded, this history is what
-        // the app's tracking timeline is actually built from, not just
-        // whatever the current status happens to be right now.
         order.statusHistory.push({ status: orderStatus, timestamp: new Date() });
     }
     if (paymentStatus) {
         order.paymentStatus = paymentStatus;
     }
+
+    // [NEW] ଟ୍ରାକିଂ ଡିଟେଲ୍ସ ଅପଡେଟ୍ କରିବା (ଯଦି ରିକ୍ୱେଷ୍ଟ୍ ରେ ପଠାଯାଇଥାଏ)
+    if (awbNumber !== undefined) order.awbNumber = awbNumber;
+    if (courierName !== undefined) order.courierName = courierName;
+    if (estimatedDelivery !== undefined) order.estimatedDelivery = estimatedDelivery;
 
     // [SMART LOGIC] ଯଦି ଅର୍ଡର ଟି ଡେଲିଭର୍ (delivered) ହୋଇଯାଏ ଏବଂ COD ଥାଏ, 
     // ତେବେ ଅଟୋମେଟିକ୍ ପେମେଣ୍ଟ୍ କୁ କମ୍ପ୍ଲିଟ୍ (completed) କରିଦିଅନ୍ତୁ
@@ -193,7 +191,7 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     // ଡାଟାବେସ୍ ରେ ସେଭ୍ କରନ୍ତୁ
     await order.save();
 
-    return sendApiResponse(res, statusCodes.OK, "Order status updated successfully", order);
+    return sendApiResponse(res, statusCodes.OK, "Order updated successfully", order);
 });
 
 // ───────────── GET MY ORDERS (Logged-in customer) ─────────────
@@ -212,13 +210,6 @@ const getMyOrders = asyncHandler(async (req, res) => {
 });
 
 // ───────────── LINK ORDER TO A JUST-VERIFIED ACCOUNT ─────────────
-// A guest can place an order (COD or online) before ever signing in,
-// this is what runs right after they verify their phone via OTP
-// afterward: it attaches that order to their now-real account, and
-// corrects the order's contact phone to match whatever number they
-// actually verified, in case what they originally typed had a mistake.
-// verifyToken guarantees req.user exists, that token only exists
-// because /auth/verify-otp just issued it for real.
 const linkOrderToUser = asyncHandler(async (req, res) => {
     const { id } = req.params;
 
@@ -267,5 +258,5 @@ module.exports = {
     linkOrderToUser,
     getAllOrders,
     updateOrderStatus,
-    getOrderTracking // <-- Add this here!
+    getOrderTracking
 };
