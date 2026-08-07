@@ -73,6 +73,30 @@ const orderSchema = new mongoose.Schema(
         razorpayPaymentId: {
             type: String,
         },
+
+        // ───────────── Tracking ─────────────
+        // All optional, set by an admin once an order actually ships.
+        awbNumber: {
+            type: String,
+        },
+        courierName: {
+            type: String,
+        },
+        estimatedDelivery: {
+            type: Date,
+        },
+        // A running history of every orderStatus change, pushed to
+        // automatically inside updateOrderStatus, this is what powers
+        // the step-by-step timeline in the app.
+        statusHistory: [
+            {
+                status: {
+                    type: String,
+                    enum: ["pending", "processing", "shipped", "out_for_delivery", "delivered", "cancelled"],
+                },
+                timestamp: { type: Date, default: Date.now },
+            },
+        ],
     },
     { timestamps: true }
 );

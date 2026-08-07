@@ -60,6 +60,9 @@ const placeOrder = asyncHandler(async (req, res) => {
             totalPrice: finalTotalPrice,
         },
         paymentMethod: paymentMethod || "Cash on Delivery",
+        // Seeds the tracking timeline with a real first entry the
+        // moment the order exists, rather than starting empty.
+        statusHistory: [{ status: "pending", timestamp: new Date() }],
     };
 
     // ଯଦି ୟୁଜର୍ ଲଗିନ୍ ଅଛନ୍ତି (req.user ଥିଲେ), ତେବେ ତାଙ୍କ ID ଯୋଡନ୍ତୁ
@@ -128,6 +131,10 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     // ଯଦି ନୂଆ ଷ୍ଟାଟସ୍ ଆସିଥାଏ, ତେବେ ତାହାକୁ ଅପଡେଟ୍ କରନ୍ତୁ
     if (orderStatus) {
         order.orderStatus = orderStatus;
+        // Every real status change gets recorded, this history is what
+        // the app's tracking timeline is actually built from, not just
+        // whatever the current status happens to be right now.
+        order.statusHistory.push({ status: orderStatus, timestamp: new Date() });
     }
     if (paymentStatus) {
         order.paymentStatus = paymentStatus;

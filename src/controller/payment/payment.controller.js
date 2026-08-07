@@ -132,6 +132,9 @@ const verifyPayment = asyncHandler(async (req, res) => {
         paymentMethod: "online",
         paymentStatus: "completed",
         razorpayPaymentId: razorpay_payment_id,
+        // Same seeding as placeOrder, a real first tracking entry from
+        // the moment the order exists.
+        statusHistory: [{ status: "pending", timestamp: new Date() }],
     };
 
     if (req.user && req.user.user_id) {

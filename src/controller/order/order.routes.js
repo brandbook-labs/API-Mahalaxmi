@@ -5,6 +5,7 @@ const {
     placeOrder, 
     getMyOrders, 
     linkOrderToUser,
+    getOrderTracking,
     getAllOrders, 
     updateOrderStatus 
 } = require("./order.controller");
@@ -14,6 +15,7 @@ const { verifyToken } = require("../../middleware/verify-token.middleware");
 router.post("/place-order", placeOrder); 
 router.get("/my-orders", verifyToken, getMyOrders); 
 router.patch("/:id/link-user", verifyToken, linkOrderToUser);
+router.get("/:id/tracking", verifyToken, getOrderTracking);
 
 // ───────────── ADMIN ROUTES ─────────────
 router.get("/all-orders", getAllOrders); 
