@@ -9,7 +9,8 @@ const { generateUniqueSlug } = require("../../utils/slug-helper");
 
 // ───────────── 1. ADD PRODUCT (Admin Only) ─────────────
 const AddProductByAdmin = asyncHandler(async (req, res) => {
-    const { name, mrp, originalPrice, description, department, collectionType, curatedCollection, productType, sizeType } = req.body;
+    // [UPDATED] Extracted videoUrl from req.body
+    const { name, mrp, originalPrice, description, department, collectionType, curatedCollection, productType, sizeType, videoUrl } = req.body;
 
     if (!name || !mrp || !originalPrice) {
         return sendApiResponse(res, statusCodes.BAD_REQUEST, "Name, MRP, and Original Price are required.");
@@ -38,6 +39,7 @@ const AddProductByAdmin = asyncHandler(async (req, res) => {
         department,
         productType,
         sizeType: sizeType || "clothing", // [NEW] ଡାଟାବେସ୍ ରେ sizeType ସେଭ୍ କରିବା ପାଇଁ
+        videoUrl: videoUrl || null, // [NEW] Added videoUrl mapping
         collectionType: safeParse(req.body.collectionType, []),
         curatedCollection: safeParse(req.body.curatedCollection, []),
         sizes: safeParse(req.body.sizes, []), 
@@ -152,7 +154,8 @@ const UpdateProductByAdmin = asyncHandler(async (req, res) => {
         return sendApiResponse(res, statusCodes.NOT_FOUND, "Product not found.");
     }
 
-    const { name, mrp, originalPrice, description, department, collectionType, curatedCollection, productType, sizeType, slug: customSlug } = req.body;
+    // [UPDATED] Extracted videoUrl from req.body
+    const { name, mrp, originalPrice, description, department, collectionType, curatedCollection, productType, sizeType, slug: customSlug, videoUrl } = req.body;
 
     const updatePayload = {};
 
@@ -177,6 +180,9 @@ const UpdateProductByAdmin = asyncHandler(async (req, res) => {
     if (department !== undefined) updatePayload.department = department;
     if (productType !== undefined) updatePayload.productType = productType;
     if (sizeType !== undefined) updatePayload.sizeType = sizeType; 
+    
+    // [NEW] Map updated video URL to payload
+    if (videoUrl !== undefined) updatePayload.videoUrl = videoUrl;
 
     if (req.body.collectionType !== undefined) updatePayload.collectionType = safeParse(req.body.collectionType, []);
     if (req.body.curatedCollection !== undefined) updatePayload.curatedCollection = safeParse(req.body.curatedCollection, []);

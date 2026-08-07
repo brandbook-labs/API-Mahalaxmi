@@ -31,6 +31,11 @@ const productSchema = new mongoose.Schema(
             type: String,
         },
         
+        // ───────────── [NEW] Video Support ─────────────
+        videoUrl: {
+            type: String
+        },
+
         // ───────────── Multiple Sizes & Inventory Handling ─────────────
         // [UPDATED] ସବୁ ପ୍ରକାରର ସାଇଜ୍ କୁ ଗ୍ରହଣ କରିବା ପାଇଁ Enum କୁ ହଟାଗଲା
         sizes: [
