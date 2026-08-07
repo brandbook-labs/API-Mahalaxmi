@@ -4,6 +4,7 @@ const { asyncHandler } = require("../../utils/asyncHandler");
 const { sendApiResponse } = require("../../utils/responseUtils");
 const Order = require("../order/order.model");
 const Product = require("../product/product.model");
+const User = require("../user/user.model"); // Added to save payment methods
 
 /**
  * Razorpay's SDK is only loaded and constructed when a request actually
@@ -84,9 +85,7 @@ const verifyPayment = asyncHandler(async (req, res) => {
         );
     }
 
-    // Verify the payment is genuine using Razorpay's standard HMAC check,
-    // this is what actually proves the payment happened, never trust the
-    // app's word for it alone.
+    // Verify the payment is genuine using Razorpay's standard HMAC check
     const expectedSignature = crypto
         .createHmac("sha256", keySecret)
         .update(`${razorpay_order_id}|${razorpay_payment_id}`)
@@ -96,8 +95,6 @@ const verifyPayment = asyncHandler(async (req, res) => {
         return sendApiResponse(res, statusCodes.UNAUTHORIZED, "Payment verification failed. Signature mismatch.");
     }
 
-    // Same server-side price verification pattern as placeOrder, never
-    // trust prices sent from the app.
     let calculatedSubtotal = 0;
     const verifiedProducts = [];
 
@@ -132,8 +129,6 @@ const verifyPayment = asyncHandler(async (req, res) => {
         paymentMethod: "online",
         paymentStatus: "completed",
         razorpayPaymentId: razorpay_payment_id,
-        // Same seeding as placeOrder, a real first tracking entry from
-        // the moment the order exists.
         statusHistory: [{ status: "pending", timestamp: new Date() }],
     };
 
@@ -146,6 +141,40 @@ const verifyPayment = asyncHandler(async (req, res) => {
         path: "products.product",
         select: "name",
     });
+
+    // [NEW] Save Razorpay Token if the user is logged in and opted to save their card
+    if (req.user && req.user.user_id) {
+        try {
+            const razorpay = getRazorpayClient();
+            if (razorpay) {
+                const paymentDetails = await razorpay.payments.fetch(razorpay_payment_id);
+                
+                // If Razorpay generated a token, it means the user checked "Save Card"
+                if (paymentDetails.token_id) {
+                    const user = await User.findById(req.user.user_id);
+                    if (user) {
+                        // Ensure we don't save duplicates
+                        const tokenExists = user.paymentMethods.some(pm => pm.razorpayTokenId === paymentDetails.token_id);
+                        
+                        if (!tokenExists) {
+                            user.paymentMethods.push({
+                                type: paymentDetails.method, // 'card' or 'upi'
+                                razorpayTokenId: paymentDetails.token_id,
+                                network: paymentDetails.card ? paymentDetails.card.network : null,
+                                last4: paymentDetails.card ? paymentDetails.card.last4 : null,
+                                vpa: paymentDetails.vpa || null,
+                                isDefault: user.paymentMethods.length === 0 
+                            });
+                            await user.save();
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("Failed to fetch and save Razorpay token details:", error.message);
+            // We swallow this error so the customer's order still succeeds even if token saving fails
+        }
+    }
 
     return sendApiResponse(res, statusCodes.CREATED, "Order placed successfully!", populatedOrder);
 });

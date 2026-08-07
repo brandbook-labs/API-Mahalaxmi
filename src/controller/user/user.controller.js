@@ -27,16 +27,12 @@ const addAddress = asyncHandler(async (req, res) => {
         return sendApiResponse(res, statusCodes.NOT_FOUND, "Account not found.");
     }
 
-    // Only one address should ever be marked default at a time.
     if (isDefault) {
         user.addresses.forEach((addr) => {
             addr.isDefault = false;
         });
     }
 
-    // The very first address a person ever saves becomes their default
-    // automatically, there is no real reason to make them do that as a
-    // separate step.
     const shouldBeDefault = isDefault || user.addresses.length === 0;
 
     user.addresses.push({
@@ -110,9 +106,6 @@ const deleteAddress = asyncHandler(async (req, res) => {
     const wasDefault = address.isDefault;
     address.deleteOne();
 
-    // If the deleted address was the default, and there's still at
-    // least one address left, promote the first remaining one so the
-    // person always has a real default rather than none at all.
     if (wasDefault && user.addresses.length > 0) {
         user.addresses[0].isDefault = true;
     }
@@ -122,9 +115,66 @@ const deleteAddress = asyncHandler(async (req, res) => {
     return sendApiResponse(res, statusCodes.OK, "Address deleted successfully");
 });
 
+// ───────────── GET PAYMENT METHODS ─────────────
+const getPaymentMethods = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user.user_id);
+    if (!user) {
+        return sendApiResponse(res, statusCodes.NOT_FOUND, "Account not found.");
+    }
+    
+    return sendApiResponse(res, statusCodes.OK, "Payment methods fetched successfully", {
+        methods: user.paymentMethods,
+    });
+});
+
+// ───────────── DELETE PAYMENT METHOD ─────────────
+const deletePaymentMethod = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const user = await User.findById(req.user.user_id);
+    if (!user) {
+        return sendApiResponse(res, statusCodes.NOT_FOUND, "Account not found.");
+    }
+
+    const paymentMethod = user.paymentMethods.id(id);
+    if (!paymentMethod) {
+        return sendApiResponse(res, statusCodes.NOT_FOUND, "Payment method not found.");
+    }
+
+    // Call Razorpay API to invalidate the token on their end.
+    try {
+        const keyId = process.env.RAZORPAY_KEY_ID;
+        const keySecret = process.env.RAZORPAY_KEY_SECRET;
+        
+        if (keyId && keySecret) {
+            const Razorpay = require("razorpay");
+            const razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret });
+            
+            if (user.razorpayCustomerId) {
+                await razorpay.customers.deleteToken(user.razorpayCustomerId, paymentMethod.razorpayTokenId);
+            } else {
+                console.warn(`Could not delete token ${paymentMethod.razorpayTokenId} from Razorpay: Missing customer ID on user.`);
+            }
+        }
+    } catch (error) {
+        console.error("Failed to delete token from Razorpay:", error.message);
+        return sendApiResponse(res, statusCodes.INTERNAL_SERVER_ERROR, "Failed to completely remove payment method.");
+    }
+
+    paymentMethod.deleteOne();
+    await user.save();
+
+    return res.status(200).json({ 
+        code: 200, 
+        msg: "Payment method removed" 
+    });
+});
+
 module.exports = {
     getAddresses,
     addAddress,
     updateAddress,
     deleteAddress,
+    getPaymentMethods,
+    deletePaymentMethod
 };
