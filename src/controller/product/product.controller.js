@@ -7,6 +7,22 @@ const { sharpCompressToSize } = require('../../utils/sharpCompressToSize');
 const { handleImageUpload } = require('../../cloudflare/r2Service'); 
 const { generateUniqueSlug } = require("../../utils/slug-helper");
 
+/**
+ * MRP (the struck-through "compare at" price) must never be lower than
+ * the actual selling price, that would show a customer an inflated
+ * price with no real discount, or worse, a strikethrough number below
+ * what they're being asked to pay. This guarantees the two always come
+ * out the right way round in the database itself, regardless of which
+ * box a number was typed into on the way in, the whole system, admin
+ * table and customer app alike, only ever has to trust one source of
+ * truth for this.
+ */
+const normalizePricing = (mrp, originalPrice) => {
+    const higher = Math.max(mrp, originalPrice);
+    const lower = Math.min(mrp, originalPrice);
+    return { mrp: higher, originalPrice: lower };
+};
+
 // ───────────── 1. ADD PRODUCT (Admin Only) ─────────────
 const AddProductByAdmin = asyncHandler(async (req, res) => {
     // [UPDATED] Extracted new smart fields: status
@@ -33,16 +49,19 @@ const AddProductByAdmin = asyncHandler(async (req, res) => {
     const slug = await generateUniqueSlug(Product, slugSource);
 
     // JSON String କୁ Object ରେ ପରିଣତ କରିବା ପାଇଁ safeParse ର ବ୍ୟବହାର 
+    const { mrp: normalizedMrp, originalPrice: normalizedOriginalPrice } =
+        normalizePricing(Number(mrp), Number(originalPrice));
+
     const payload = {
         name,
         slug,
-        mrp: Number(mrp),
-        originalPrice: Number(originalPrice),
+        mrp: normalizedMrp,
+        originalPrice: normalizedOriginalPrice,
         description,
         department,
         productType,
         sizeType: sizeType || "clothing", 
-        videoUrl: videoUrl || null, 
+        videoUrl: videoUrl || null,
         status: status || 'active', // [NEW] Smart Status Added
         collectionType: safeParse(req.body.collectionType, []),
         curatedCollection: safeParse(req.body.curatedCollection, []),
@@ -202,11 +221,16 @@ const UpdateProductByAdmin = asyncHandler(async (req, res) => {
         }
     }
 
-    if (originalPrice !== undefined) updatePayload.originalPrice = Number(originalPrice);
-    if (mrp !== undefined) {
-        updatePayload.mrp = Number(mrp);
-    } else if (originalPrice !== undefined && !existingProduct.mrp) {
-        updatePayload.mrp = Number(originalPrice);
+    // Same normalization as creation: whichever number is higher always
+    // ends up as mrp, whichever is lower always ends up as
+    // originalPrice, so an edit can never accidentally invert them.
+    if (mrp !== undefined || originalPrice !== undefined) {
+        const effectiveMrp = mrp !== undefined ? Number(mrp) : existingProduct.mrp;
+        const effectiveOriginalPrice =
+            originalPrice !== undefined ? Number(originalPrice) : existingProduct.originalPrice;
+        const normalized = normalizePricing(effectiveMrp, effectiveOriginalPrice);
+        updatePayload.mrp = normalized.mrp;
+        updatePayload.originalPrice = normalized.originalPrice;
     }
 
     if (description !== undefined) updatePayload.description = description;
