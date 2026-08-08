@@ -4,6 +4,7 @@ const { sendApiResponse } = require("../../utils/responseUtils");
 const Order = require("./order.model");
 const Product = require("../product/product.model");
 const User = require("../user/user.model");
+const { linkGuestOrdersToUser } = require("../../utils/linkGuestOrders");
 
 // ───────────── PLACE ORDER ─────────────
 const placeOrder = asyncHandler(async (req, res) => {
@@ -223,9 +224,19 @@ const linkOrderToUser = asyncHandler(async (req, res) => {
         return sendApiResponse(res, statusCodes.NOT_FOUND, "Account not found.");
     }
 
+    // This specific order might have had a mistyped phone number, so it
+    // gets corrected and linked directly here rather than relying on
+    // the phone-based sweep below to happen to find it.
     order.user = user._id;
     order.phone = user.phone;
     await order.save();
+
+    // Defense in depth: verifyOtp already sweeps every guest order under
+    // this phone number at the moment of verification, this repeats
+    // that same sweep here too, so linking never depends on a single
+    // code path succeeding, calling it twice for the same person is a
+    // safe no-op the second time.
+    await linkGuestOrdersToUser(user._id, user.phone);
 
     return sendApiResponse(res, statusCodes.OK, "Order linked to your account.", order);
 });

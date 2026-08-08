@@ -5,6 +5,7 @@ const { sendApiResponse } = require("../../utils/responseUtils");
 const { isValidIndianMobile } = require("../../utils/phone-validator");
 const { generateToken } = require("../../middleware/generate-token.middleware");
 const { sendOtpSms } = require("../../services/sms-service");
+const { linkGuestOrdersToUser } = require("../../utils/linkGuestOrders");
 const User = require("../user/user.model");
 const Otp = require("./otp.model");
 
@@ -89,6 +90,12 @@ const verifyOtp = asyncHandler(async (req, res) => {
     if (!user) {
         user = await User.create({ phone });
     }
+
+    // Every verification is a real chance to sweep up any guest orders
+    // sitting under this number, not just the specific one someone
+    // might be in the middle of, this is what fixes "I placed three
+    // orders as a guest but only see one" for good.
+    await linkGuestOrdersToUser(user._id, phone);
 
     const token = generateToken(user._id);
 

@@ -105,7 +105,16 @@ const GetAllProducts = asyncHandler(async (req, res) => {
     if (collectionType) query.collectionType = collectionType;
     if (curatedCollection) query.curatedCollection = curatedCollection;
     if (productType) query.productType = productType;
-    
+
+    // A real customer (no valid admin token) only ever sees published
+    // products, this can't be bypassed by passing a status query param,
+    // that's ignored entirely here. A signed-in admin (req.user set by
+    // optionalAuth) sees everything, drafts included, so the product
+    // table in the admin panel keeps working exactly as it does today.
+    if (!req.user) {
+        query.status = "active";
+    }
+
     if (search) {
         query.name = { $regex: search, $options: "i" }; 
     }
@@ -150,6 +159,13 @@ const GetProductById = asyncHandler(async (req, res) => {
     const product = await Product.findOne({ slug }).lean().exec();
 
     if (!product) {
+        return sendApiResponse(res, statusCodes.NOT_FOUND, "Product not found.");
+    }
+
+    // Same rule as the listing endpoint: a draft is invisible to anyone
+    // without a valid admin token, even with the direct link in hand,
+    // not just hidden from search and category browsing.
+    if (product.status === "draft" && !req.user) {
         return sendApiResponse(res, statusCodes.NOT_FOUND, "Product not found.");
     }
 
