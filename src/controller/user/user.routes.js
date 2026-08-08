@@ -7,7 +7,8 @@ const {
     updateAddress, 
     deleteAddress,
     getPaymentMethods,     // <-- Added import
-    deletePaymentMethod    // <-- Added import
+    deletePaymentMethod,   // <-- Added import
+    deleteAccount
 } = require("./user.controller");
 const { verifyToken } = require("../../middleware/verify-token.middleware");
 
@@ -21,5 +22,8 @@ router.delete("/addresses/:id", verifyToken, deleteAddress);
 // ───────────── PAYMENT METHOD ROUTES ─────────────
 router.get("/payment-methods", verifyToken, getPaymentMethods);
 router.delete("/payment-methods/:id", verifyToken, deletePaymentMethod);
+
+// ───────────── ACCOUNT DELETION ─────────────
+router.delete("/account", verifyToken, deleteAccount);
 
 module.exports = router;

@@ -170,11 +170,31 @@ const deletePaymentMethod = asyncHandler(async (req, res) => {
     });
 });
 
+// ───────────── DELETE ACCOUNT (real, in-app, self-service) ─────────────
+// Google Play policy requires apps that support account creation to
+// also offer in-app account deletion, not just "contact support",
+// this is that real endpoint. Orders already placed are kept (both
+// for the customer's own records if they ever return, and because
+// Indian tax law requires transaction records be retained for a
+// period), but they're unlinked from the deleted account so they can
+// no longer be viewed or tied back to it. The account itself, and all
+// personal data on it, is permanently removed.
+const deleteAccount = asyncHandler(async (req, res) => {
+    const userId = req.user.user_id;
+    const Order = require("../order/order.model");
+
+    await Order.updateMany({ user: userId }, { $unset: { user: "" } });
+    await User.findByIdAndDelete(userId);
+
+    return sendApiResponse(res, statusCodes.OK, "Your account has been permanently deleted.");
+});
+
 module.exports = {
     getAddresses,
     addAddress,
     updateAddress,
     deleteAddress,
     getPaymentMethods,
-    deletePaymentMethod
+    deletePaymentMethod,
+    deleteAccount
 };

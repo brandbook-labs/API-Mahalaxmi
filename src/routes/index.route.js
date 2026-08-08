@@ -11,6 +11,7 @@ const userRoutes = require("../controller/user/user.routes");
 const productCategoryRoutes = require("../controller/product-category/product-category.routes");
 const faqRoutes = require("../controller/faq/faq.routes");
 const contactInfoRoutes = require("../controller/contact-info/contact-info.routes");
+const legalRoutes = require("../controller/legal/legal.routes");
 
 // API Versioning (ବେଷ୍ଟ୍ ପ୍ରାକ୍ଟିସ୍)
 const API_VERSION = "/api/v1";
@@ -25,6 +26,7 @@ router.use(`${API_VERSION}/user`, userRoutes);
 router.use(`${API_VERSION}/product-categories`, productCategoryRoutes);
 router.use(`${API_VERSION}/faqs`, faqRoutes);
 router.use(`${API_VERSION}/contact-info`, contactInfoRoutes);
+router.use(`${API_VERSION}/legal`, legalRoutes);
 
 // Health Check Route (ସର୍ଭର ଚାଲୁଛି କି ନାହିଁ ଜାଣିବା ପାଇଁ)
 router.get("/health", (req, res) => {
